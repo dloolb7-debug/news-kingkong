@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PB 맞춤형 이슈 브리핑 Self-Correcting Multi-Agent System</title>
+  
+  <!-- 마크다운 파싱 라이브러리 -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- HTML to PDF 변환 라이브러리 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f4f6f9;
+      color: #333;
+    }
+    .header {
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #e0e0e0;
+    }
+    .header h2 { margin: 0 0 5px 0; color: #1a73e8; }
+    .header p { margin: 0; color: #666; font-size: 14px; }
+
+    .main-container {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+    }
+    .left-panel {
+      flex: 1;
+      background: #ffffff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+      min-width: 300px;
+    }
+    .right-panel {
+      flex: 1.8;
+      background: #ffffff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+      min-height: 550px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #eee;
+    }
+    .panel-header h3 { margin: 0; font-size: 16px; color: #333; }
+    
+    .pdf-btn {
+      padding: 6px 14px;
+      background-color: #28a745;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: bold;
+      width: auto;
+    }
+    .pdf-btn:hover { background-color: #218838; }
+
+    .form-group { margin-bottom: 18px; }
+    label { font-weight: 600; display: block; margin-bottom: 6px; font-size: 14px; }
+    input, select {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    .submit-btn {
+      padding: 12px 20px;
+      background-color: #1a73e8;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: bold;
+      width: 100%;
+      margin-top: 10px;
+      transition: background-color 0.2s;
+    }
+    .submit-btn:hover { background-color: #1557b0; }
+    .submit-btn:disabled { background-color: #ccc; cursor: not-allowed; }
+
+    .agent-status-bar {
+      margin-bottom: 15px;
+      padding: 12px;
+      background-color: #e8f0fe;
+      border-left: 4px solid #1a73e8;
+      font-size: 13px;
+      color: #1967d2;
+      display: none;
+      line-height: 1.5;
+    }
+
+    .result-content {
+      flex: 1;
+      font-size: 14px;
+      line-height: 1.7;
+      color: #2c3e50;
+      padding: 10px;
+    }
+    .result-content h1, .result-content h2, .result-content h3 {
+      color: #1a73e8;
+      margin-top: 20px;
+      margin-bottom: 10px;
+      page-break-inside: avoid;
+    }
+    .result-content p, .result-content li {
+      margin-bottom: 10px;
+      page-break-inside: avoid;
+    }
+    .result-content ul, .result-content ol {
+      padding-left: 20px;
+      margin-bottom: 15px;
+    }
+    .result-content a { color: #1a73e8; text-decoration: none; font-weight: 500; }
+    .result-content a:hover { text-decoration: underline; }
+
+    /* 로딩 스피너 애니메이션 */
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .spinner {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #1a73e8;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 15px auto;
+    }
+
+    /* 검증된 레퍼런스 스타일 */
+    .reference-box {
+      margin-top: 25px;
+      padding-top: 15px;
+      border-top: 2px dashed #e0e0e0;
+      page-break-inside: avoid;
+    }
+    .reference-box h4 { margin: 0 0 10px 0; color: #1a73e8; font-size: 15px; }
+    .reference-list { list-style: none; padding: 0; margin: 0; }
+    .reference-list li { margin-bottom: 8px; font-size: 13px; word-break: break-all; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h2>🙉 뉴스킹콩 : Multi-Agent PB 브리핑 서비스</h2>
+    <p>Data Agent ➔ Evaluator Agent ➔ Strategy Agent ➔ Master Editor</p>
+  </div>
+
+  <div class="main-container">
+    
+    <div class="left-panel">
+      <div class="form-group">
+        <label for="keyword">1. 키워드 / 기업명 / 시장 주제</label>
+        <input type="text" id="keyword" placeholder="예: 삼성전자, 미국 금리 등" />
+      </div>
+
+      <div class="form-group">
+        <label for="period">2. 정보 검색 기간</label>
+        <select id="period">
+          <option value="최근 24시간 이내">최근 24시간 이내</option>
+          <option value="최근 3일 이내">최근 3일 이내</option>
+          <option value="최근 1주일 이내" selected>최근 1주일 이내</option>
+          <option value="최근 1개월 이내">최근 1개월 이내</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="customInstruction">3. 추가 분석 요청사항 (선택)</label>
+        <input type="text" id="customInstruction" placeholder="예: SK하이닉스 대비 우위 요소 위주 등" />
+      </div>
+
+      <button id="submitBtn" class="submit-btn" onclick="runMasterAgentPipeline()">뉴스킹콩 시작</button>
+    </div>
+
+    <div class="right-panel">
+      <div class="panel-header">
+        <h3>뉴스킹콩 리포트</h3>
+        <button id="pdfBtn" class="pdf-btn" onclick="downloadPDF()" style="display: none;">📄 PDF로 저장</button>
+      </div>
+      
+      <div id="statusBar" class="agent-status-bar"></div>
+
+      <div id="result" class="result-content">왼쪽 옵션 입력 후 [뉴스킹콩 시작] 버튼을 눌러주세요.</div>
+    </div>
+
+  </div>
+
+  <script>
+    const SYSTEM_API_KEY = "AQ.Ab8RN6LUw6Sv3sSfTpI9Ou4lOcCKokVGaLT6EnRSA846Uo7D8Q"; 
+
+    marked.use({
+      renderer: {
+        link(item) {
+          const href = item.href || '';
+          const text = item.text || (item.tokens && item.tokens[0] ? item.tokens[0].raw : href);
+          const title = item.title ? ` title="${item.title}"` : '';
+          return `<a href="${href}" target="_blank" rel="noopener noreferrer"${title}>${text}</a>`;
+        }
+      }
+    });
+
+    // Gemini API 호출 함수
+    async function callGeminiAPI(promptText, apiKey, enableSearch = false) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`;
+      const requestBody = { contents: [{ parts: [{ text: promptText }] }] };
+      if (enableSearch) { requestBody.tools = [{ google_search: {} }]; }
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+      const data = await response.json();
+      if (data.error) throw new Error(data.error.message);
+      
+      const candidate = data.candidates[0];
+      return {
+        text: candidate.content.parts[0].text,
+        groundingMetadata: candidate.groundingMetadata || null
+      };
+    }
+
+    // [Agent A] Data Retrieval Agent (Self-Correction: 수집 미흡 시 검색어 재구성 후 재시도)
+    async function runAgentAWithSelfCorrection(keyword, period, apiKey, statusBar, maxRetries = 2) {
+      let currentQuery = keyword;
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        statusBar.innerHTML = `🔍 <strong>[Agent A: Data Retrieval]</strong> 실시간 웹 검색 실행 중... (시도 ${attempt}/${maxRetries})`;
+        
+        const prompt = `당신은 금융 시장 데이터 수집 전문 에이전트(Agent A)입니다.
+수집 대상 주제: ${currentQuery}
+검색 기준 기간: ${period}
+
+[지시사항]
+1. 위 키워드와 관련하여 ${period} 동안 보도된 주요 언론사의 공식 뉴스 및 기사 데이터를 검색하십시오.
+2. 수집된 내용 중 시장 영향력이 크거나 정량적 지표(수치, 금액, 변동률)가 포함된 팩트 위주로 정리하십시오.
+3. 데이터가 부족하거나 없을 경우 추측하지 말고 "해당 기간 내 주요 이슈 없음"이라고 명시하십시오.
+4. 본문 내용 마지막에 링크나 주소를 직접 적지 마십시오. 오직 수집된 팩트 데이터만 정리하십시오.
+
+[출력 형식]
+- 주요 이슈 팩트 요약 (3~5개 항목)
+- 주요 정량적 지표 및 변동 사항
+- 시장 영향 요인`;
+
+        const res = await callGeminiAPI(prompt, apiKey, true);
+
+        // 자가검증: 결과물의 유효성 검사 (길이 및 "이슈 없음" 포함 여부 확인)
+        const isSufficient = res.text && res.text.length > 150 && !res.text.includes("해당 기간 내 주요 이슈 없음");
+
+        if (isSufficient || attempt === maxRetries) {
+          return res;
+        }
+
+        // 검증 실패 시 검색 키워드 보완 및 재시도 피드백 루프
+        statusBar.innerHTML = `⚠️ <strong>[Agent A Self-Correction]</strong> 수집된 데이터 미흡. 검색어 재구성 후 재검색 중...`;
+        currentQuery = `${keyword} 주가 시장 동향 전망`;
+      }
+    }
+
+    // [Agent B] Source Evaluator Agent (Self-Correction: JSON 파싱 오류 시 피드백 재요청)
+    async function runAgentBWithSelfCorrection(newsSummary, groundingMetadata, apiKey, statusBar, maxRetries = 2) {
+      if (!groundingMetadata || !groundingMetadata.groundingChunks) return [];
+
+      const untrustedDomains = [
+        'tistory.com', 'blog.naver.com', 'youtube.com', 'youtu.be', 
+        'brunch.co.kr', 'cafe.naver.com', 'dcinside.com', 'velog.io'
+      ];
+
+      // 1차 필터링
+      const trustedChunks = [];
+      groundingMetadata.groundingChunks.forEach(chunk => {
+        if (chunk.web && chunk.web.uri) {
+          const uri = chunk.web.uri;
+          const isUntrusted = untrustedDomains.some(domain => uri.toLowerCase().includes(domain));
+          if (!isUntrusted) {
+            const title = (chunk.web.title && chunk.web.title.trim() !== "") ? chunk.web.title : uri;
+            trustedChunks.push({ title: title, url: uri });
+          }
+        }
+      });
+
+      const uniqueLinks = Array.from(new Set(trustedChunks.map(a => a.url)))
+        .map(url => trustedChunks.find(a => a.url === url));
+
+      if (uniqueLinks.length === 0) return [];
+
+      // 2차 LLM 평가 및 JSON 형식 검증 피드백 루프
+      let lastError = "";
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        statusBar.innerHTML = `🛡️ <strong>[Agent B: Source Evaluator]</strong> 출처 연관성 검증 및 JSON 구조화 중... (시도 ${attempt}/${maxRetries})`;
+
+        const feedbackMsg = lastError ? `\n\n[경고: 이전 응답에서 오류가 발생했습니다: ${lastError}. 마크다운 없이 오직 순수한 JSON 배열만 출력하십시오.]` : '';
+        const evalPrompt = `당신은 출처 검증 에이전트(Agent B)입니다.
+아래 [뉴스 요약본]의 내용과 [수집된 출처 목록]을 비교하여, 뉴스 요약본의 팩트를 뒷받침하는 가장 신뢰할 수 있는 핵심 출처 최대 4개를 선정하여 JSON 배열로 반환하십시오.${feedbackMsg}
+
+[뉴스 요약본]
+${newsSummary}
+
+[수집된 출처 목록]
+${JSON.stringify(uniqueLinks)}
+
+[작성 규칙]
+1. 반드시 마크다운 코드 블록(\`\`\`json)을 쓰지 말고, 오직 [ { "title": "...", "url": "..." } ] 형태의 순수 JSON 배열만 출력하십시오.`;
+
+        try {
+          const evalResult = await callGeminiAPI(evalPrompt, apiKey, false);
+          const cleanedText = evalResult.text.replace(/```json|```/g, '').trim();
+          const verifiedLinks = JSON.parse(cleanedText);
+
+          if (Array.isArray(verifiedLinks)) {
+            return verifiedLinks;
+          }
+          throw new Error("출력 결과가 배열 형태가 아닙니다.");
+        } catch (e) {
+          lastError = e.message;
+          statusBar.innerHTML = `⚠️ <strong>[Agent B Self-Correction]</strong> JSON 포맷 규격 미준수 감지. 자동 피드백 전달 중...`;
+        }
+      }
+
+      // 재시도 최종 실패 시 1차 필터링된 링크 사용 (Fallback)
+      return uniqueLinks.slice(0, 4);
+    }
+
+    // [Agent C] PB Strategy Agent
+    async function runAgentC(keyword, newsText, customInstruction, apiKey) {
+      const customText = customInstruction ? `\n추가 분석 요구사항: ${customInstruction}` : '';
+      const prompt = `당신은 리테일 자산관리(PB) 부문의 수석 투자전략가(Agent C)입니다.
+제공된 뉴스 데이터를 바탕으로 PB가 고객 상담 시 즉시 활용할 수 있는 실전 대응 가이드라인을 작성하십시오.
+
+[뉴스 데이터]
+${newsText}
+${customText}
+
+[작성 지시사항]
+1. Quick Briefing: 고객과의 전화/미팅 시작 시 30초 내로 전달할 수 있는 핵심 서머리 (2~3문장, 명확한 두괄식).
+2. Q&A 대응: 고객 문의가 예상되는 핵심 질문 2가지와 수집된 팩트에 기반한 객관적 답변 포인트.
+3. 자산관리 포지셔닝: 해당 이슈가 관련 자산군에 미치는 단기/중장기 영향 및 대응 스탠스(매수/비중유지/리스크 관리 등)와 그 논리적 근거.`;
+
+      const res = await callGeminiAPI(prompt, apiKey, false);
+      return res.text;
+    }
+
+    // [Master Agent] 최종 리포트 합성 및 자가검증(Self-Correction) 피드백 루프
+    async function runMasterAgentWithSelfCorrection(keyword, period, newsText, strategyText, apiKey, statusBar, maxRetries = 2) {
+      let feedbackPrompt = "";
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        statusBar.innerHTML = `👑 <strong>[Master Agent]</strong> 리포트 합성 및 최종 검토 중... (시도 ${attempt}/${maxRetries})`;
+
+        const masterPrompt = `당신은 최고 품질의 리포트를 발행하는 Master Editor Agent입니다.
+하위 에이전트들이 생성한 데이터를 바탕으로 가독성이 뛰어난 [PB Morning Briefing] 리포트를 최종 합성하십시오.${feedbackPrompt}
+
+[입력 데이터]
+1. 수집된 뉴스 분석 데이터:
+${newsText}
+
+2. PB 대응 전략 데이터:
+${strategyText}
+
+[출력 작성 규칙]
+- 입력 데이터의 핵심 수치, 팩트, 논리적 근거를 누락하거나 임의로 변경하지 마십시오.
+- 아래 지정된 마크다운 양식을 엄격히 준수하여 정갈하게 구조화하십시오.
+
+# 📄 [PB Morning Briefing] ${keyword} 동향 리포트
+**[분석 기준 기간: ${period}]**
+
+---
+
+### 1. 📌 30초 핵심 브리핑 (Quick Summary)
+(Agent C의 Quick Briefing 내용 재구성)
+
+### 2. 💡 주요 발생 이슈 및 시장 분석
+(Agent A의 팩트 요약, 정량적 지표 및 시장 영향 요인 체계적 반영)
+
+### 3. 🎯 PB 고객 대응 & 자산관리 가이드라인
+(Agent C의 Q&A 대응 및 자산관리 포지셔닝 명확히 배치)`;
+
+        const result = await callGeminiAPI(masterPrompt, apiKey, false);
+
+        // 자가검증: 3가지 핵심 섹션이 모두 포함되었는지 점검
+        const hasSection1 = result.text.includes("30초 핵심 브리핑");
+        const hasSection2 = result.text.includes("주요 발생 이슈");
+        const hasSection3 = result.text.includes("PB 고객 대응");
+
+        if ((hasSection1 && hasSection2 && hasSection3) || attempt === maxRetries) {
+          return result;
+        }
+
+        // 특정 섹션 누락 시 자가 수정 피드백 주입
+        statusBar.innerHTML = `⚠️ <strong>[Master Agent Self-Correction]</strong> 필수 섹션 누락 감지. 리포트 재구성 중...`;
+        feedbackPrompt = `\n\n[주의: 이전 생성 결과에 일부 필수 섹션이 누락되었습니다. 반드시 1, 2, 3번 섹션을 모두 명확히 포함하여 작성하십시오.]`;
+      }
+    }
+
+    // [Pipeline] 멀티 에이전트 파이프라인 총괄 실행
+    async function runMasterAgentPipeline() {
+      const keyword = document.getElementById('keyword').value.trim();
+      const period = document.getElementById('period').value;
+      const customInstruction = document.getElementById('customInstruction').value.trim();
+
+      if (!keyword) { alert('키워드를 입력해주세요.'); return; }
+
+      const apiKey = SYSTEM_API_KEY === "YOUR_GEMINI_API_KEY_HERE" ? prompt("테스트용 Gemini API Key를 입력하세요:") : SYSTEM_API_KEY;
+      if (!apiKey) return;
+
+      const submitBtn = document.getElementById('submitBtn');
+      const resultDiv = document.getElementById('result');
+      const pdfBtn = document.getElementById('pdfBtn');
+      const statusBar = document.getElementById('statusBar');
+
+      // UI 초기화
+      submitBtn.disabled = true;
+      submitBtn.innerText = "⏳ Multi-Agent 분석 진행 중...";
+      pdfBtn.style.display = "none";
+
+      resultDiv.innerHTML = `
+        <div style="text-align: center; padding: 50px 20px; color: #666;">
+          <div class="spinner"></div>
+          <p style="font-size: 16px; font-weight: bold; color: #1a73e8; margin-bottom: 5px;">'${keyword}' 이슈 분석 리포트를 생성하고 있습니다.</p>
+          <p style="font-size: 13px; color: #888;">Data Agent ➔ Evaluator Agent ➔ Strategy Agent ➔ Master Agent (자가검증 루프 작동 중)</p>
+        </div>
+      `;
+
+      statusBar.style.display = "block";
+      statusBar.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+      try {
+        // Step 1: Agent A (Self-Correction)
+        const agentAResult = await runAgentAWithSelfCorrection(keyword, period, apiKey, statusBar);
+
+        // Step 2: Agent B (Self-Correction)
+        const verifiedLinks = await runAgentBWithSelfCorrection(agentAResult.text, agentAResult.groundingMetadata, apiKey, statusBar);
+
+        // Step 3: Agent C
+        statusBar.innerHTML = "🧠 <strong>[Agent C: PB Strategy]</strong> 고객 대응 가이드라인 및 자산운용 전략 생성 중...";
+        const agentCOutput = await runAgentC(keyword, agentAResult.text, customInstruction, apiKey);
+
+        // Step 4: Master Agent (Self-Correction)
+        const masterResult = await runMasterAgentWithSelfCorrection(keyword, period, agentAResult.text, agentCOutput, apiKey, statusBar);
+
+        // 마크다운 파싱 및 UI 출력
+        let htmlContent = marked.parse(masterResult.text);
+
+        if (verifiedLinks.length > 0) {
+          htmlContent += `
+          <div class="reference-box">
+            <h4>🔗 검증된 공식 레퍼런스 (Google Verified Links)</h4>
+            <ul class="reference-list">
+          `;
+          verifiedLinks.forEach(link => {
+            htmlContent += `<li>📄 <a href="${link.url}" target="_blank" rel="noopener noreferrer">${link.title} (${link.url})</a></li>`;
+          });
+          htmlContent += `</ul></div>`;
+        }
+
+        statusBar.innerHTML = `✅ <strong>[Self-Correction 파이프라인 완료]</strong> 모든 검증 항목 통과 ➔ 검증 출처 ${verifiedLinks.length}건 확보 ➔ 리포트 합성 완료`;
+        resultDiv.innerHTML = htmlContent;
+        pdfBtn.style.display = "block";
+
+      } catch (err) {
+        statusBar.style.display = "none";
+        resultDiv.innerHTML = `<div style="color: #d93025; padding: 20px; font-weight: bold;">오류 발생: ${err.message}</div>`;
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerText = "Hierarchical Multi-Agent 실행";
+      }
+    }
+
+    function downloadPDF() {
+      const element = document.getElementById('result');
+      const keyword = document.getElementById('keyword').value.trim() || '동향분석';
+      
+      const opt = {
+        margin:       15,
+        filename:     `${keyword}_PB_브리핑_리포트.pdf`,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2, useCORS: true },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
+      };
+
+      html2pdf().set(opt).from(element).save();
+    }
+  </script>
+</body>
+</html>
