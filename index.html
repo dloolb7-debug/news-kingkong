@@ -134,7 +134,6 @@
     .result-content a { color: #1a73e8; text-decoration: none; font-weight: 500; }
     .result-content a:hover { text-decoration: underline; }
 
-    /* 로딩 스피너 애니메이션 */
     @keyframes spin {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
@@ -149,7 +148,6 @@
       margin: 0 auto 15px auto;
     }
 
-    /* 검증된 레퍼런스 스타일 */
     .reference-box {
       margin-top: 25px;
       padding-top: 15px;
@@ -208,7 +206,8 @@
   </div>
 
   <script>
-    const SYSTEM_API_KEY = "AQ.Ab8RN6LUw6Sv3sSfTpI9Ou4lOcCKokVGaLT6EnRSA846Uo7D8Q"; 
+    // 🔴 생성하신 Cloudflare Worker URL 주소를 적어주세요.
+    const WORKER_URL = "https://news-kingkong-proxy.dloolb7.workers.dev";
 
     marked.use({
       renderer: {
@@ -221,19 +220,17 @@
       }
     });
 
-    // Gemini API 호출 함수
-    async function callGeminiAPI(promptText, apiKey, enableSearch = false) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`;
-      const requestBody = { contents: [{ parts: [{ text: promptText }] }] };
-      if (enableSearch) { requestBody.tools = [{ google_search: {} }]; }
-
-      const response = await fetch(url, {
+    async function callGeminiAPI(promptText, enableSearch = false) {
+      const response = await fetch(WORKER_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify({ promptText, enableSearch })
       });
+
       const data = await response.json();
-      if (data.error) throw new Error(data.error.message);
+      if (data.error) {
+        throw new Error(typeof data.error === 'string' ? data.error : data.error.message);
+      }
       
       const candidate = data.candidates[0];
       return {
@@ -242,8 +239,7 @@
       };
     }
 
-    // [Agent A] Data Retrieval Agent (Self-Correction: 수집 미흡 시 검색어 재구성 후 재시도)
-    async function runAgentAWithSelfCorrection(keyword, period, apiKey, statusBar, maxRetries = 2) {
+    async function runAgentAWithSelfCorrection(keyword, period, statusBar, maxRetries = 2) {
       let currentQuery = keyword;
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -264,23 +260,20 @@
 - 주요 정량적 지표 및 변동 사항
 - 시장 영향 요인`;
 
-        const res = await callGeminiAPI(prompt, apiKey, true);
+        const res = await callGeminiAPI(prompt, true);
 
-        // 자가검증: 결과물의 유효성 검사 (길이 및 "이슈 없음" 포함 여부 확인)
         const isSufficient = res.text && res.text.length > 150 && !res.text.includes("해당 기간 내 주요 이슈 없음");
 
         if (isSufficient || attempt === maxRetries) {
           return res;
         }
 
-        // 검증 실패 시 검색 키워드 보완 및 재시도 피드백 루프
         statusBar.innerHTML = `⚠️ <strong>[Agent A Self-Correction]</strong> 수집된 데이터 미흡. 검색어 재구성 후 재검색 중...`;
         currentQuery = `${keyword} 주가 시장 동향 전망`;
       }
     }
 
-    // [Agent B] Source Evaluator Agent (Self-Correction: JSON 파싱 오류 시 피드백 재요청)
-    async function runAgentBWithSelfCorrection(newsSummary, groundingMetadata, apiKey, statusBar, maxRetries = 2) {
+    async function runAgentBWithSelfCorrection(newsSummary, groundingMetadata, statusBar, maxRetries = 2) {
       if (!groundingMetadata || !groundingMetadata.groundingChunks) return [];
 
       const untrustedDomains = [
@@ -288,7 +281,6 @@
         'brunch.co.kr', 'cafe.naver.com', 'dcinside.com', 'velog.io'
       ];
 
-      // 1차 필터링
       const trustedChunks = [];
       groundingMetadata.groundingChunks.forEach(chunk => {
         if (chunk.web && chunk.web.uri) {
@@ -306,7 +298,6 @@
 
       if (uniqueLinks.length === 0) return [];
 
-      // 2차 LLM 평가 및 JSON 형식 검증 피드백 루프
       let lastError = "";
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         statusBar.innerHTML = `🛡️ <strong>[Agent B: Source Evaluator]</strong> 출처 연관성 검증 및 JSON 구조화 중... (시도 ${attempt}/${maxRetries})`;
@@ -325,7 +316,7 @@ ${JSON.stringify(uniqueLinks)}
 1. 반드시 마크다운 코드 블록(\`\`\`json)을 쓰지 말고, 오직 [ { "title": "...", "url": "..." } ] 형태의 순수 JSON 배열만 출력하십시오.`;
 
         try {
-          const evalResult = await callGeminiAPI(evalPrompt, apiKey, false);
+          const evalResult = await callGeminiAPI(evalPrompt, false);
           const cleanedText = evalResult.text.replace(/```json|```/g, '').trim();
           const verifiedLinks = JSON.parse(cleanedText);
 
@@ -339,12 +330,10 @@ ${JSON.stringify(uniqueLinks)}
         }
       }
 
-      // 재시도 최종 실패 시 1차 필터링된 링크 사용 (Fallback)
       return uniqueLinks.slice(0, 4);
     }
 
-    // [Agent C] PB Strategy Agent
-    async function runAgentC(keyword, newsText, customInstruction, apiKey) {
+    async function runAgentC(keyword, newsText, customInstruction) {
       const customText = customInstruction ? `\n추가 분석 요구사항: ${customInstruction}` : '';
       const prompt = `당신은 리테일 자산관리(PB) 부문의 수석 투자전략가(Agent C)입니다.
 제공된 뉴스 데이터를 바탕으로 PB가 고객 상담 시 즉시 활용할 수 있는 실전 대응 가이드라인을 작성하십시오.
@@ -358,12 +347,11 @@ ${customText}
 2. Q&A 대응: 고객 문의가 예상되는 핵심 질문 2가지와 수집된 팩트에 기반한 객관적 답변 포인트.
 3. 자산관리 포지셔닝: 해당 이슈가 관련 자산군에 미치는 단기/중장기 영향 및 대응 스탠스(매수/비중유지/리스크 관리 등)와 그 논리적 근거.`;
 
-      const res = await callGeminiAPI(prompt, apiKey, false);
+      const res = await callGeminiAPI(prompt, false);
       return res.text;
     }
 
-    // [Master Agent] 최종 리포트 합성 및 자가검증(Self-Correction) 피드백 루프
-    async function runMasterAgentWithSelfCorrection(keyword, period, newsText, strategyText, apiKey, statusBar, maxRetries = 2) {
+    async function runMasterAgentWithSelfCorrection(keyword, period, newsText, strategyText, statusBar, maxRetries = 2) {
       let feedbackPrompt = "";
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -397,9 +385,8 @@ ${strategyText}
 ### 3. 🎯 PB 고객 대응 & 자산관리 가이드라인
 (Agent C의 Q&A 대응 및 자산관리 포지셔닝 명확히 배치)`;
 
-        const result = await callGeminiAPI(masterPrompt, apiKey, false);
+        const result = await callGeminiAPI(masterPrompt, false);
 
-        // 자가검증: 3가지 핵심 섹션이 모두 포함되었는지 점검
         const hasSection1 = result.text.includes("30초 핵심 브리핑");
         const hasSection2 = result.text.includes("주요 발생 이슈");
         const hasSection3 = result.text.includes("PB 고객 대응");
@@ -408,13 +395,11 @@ ${strategyText}
           return result;
         }
 
-        // 특정 섹션 누락 시 자가 수정 피드백 주입
         statusBar.innerHTML = `⚠️ <strong>[Master Agent Self-Correction]</strong> 필수 섹션 누락 감지. 리포트 재구성 중...`;
         feedbackPrompt = `\n\n[주의: 이전 생성 결과에 일부 필수 섹션이 누락되었습니다. 반드시 1, 2, 3번 섹션을 모두 명확히 포함하여 작성하십시오.]`;
       }
     }
 
-    // [Pipeline] 멀티 에이전트 파이프라인 총괄 실행
     async function runMasterAgentPipeline() {
       const keyword = document.getElementById('keyword').value.trim();
       const period = document.getElementById('period').value;
@@ -422,15 +407,11 @@ ${strategyText}
 
       if (!keyword) { alert('키워드를 입력해주세요.'); return; }
 
-      const apiKey = SYSTEM_API_KEY === "YOUR_GEMINI_API_KEY_HERE" ? prompt("테스트용 Gemini API Key를 입력하세요:") : SYSTEM_API_KEY;
-      if (!apiKey) return;
-
       const submitBtn = document.getElementById('submitBtn');
       const resultDiv = document.getElementById('result');
       const pdfBtn = document.getElementById('pdfBtn');
       const statusBar = document.getElementById('statusBar');
 
-      // UI 초기화
       submitBtn.disabled = true;
       submitBtn.innerText = "⏳ Multi-Agent 분석 진행 중...";
       pdfBtn.style.display = "none";
@@ -447,20 +428,14 @@ ${strategyText}
       statusBar.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
       try {
-        // Step 1: Agent A (Self-Correction)
-        const agentAResult = await runAgentAWithSelfCorrection(keyword, period, apiKey, statusBar);
+        const agentAResult = await runAgentAWithSelfCorrection(keyword, period, statusBar);
+        const verifiedLinks = await runAgentBWithSelfCorrection(agentAResult.text, agentAResult.groundingMetadata, statusBar);
 
-        // Step 2: Agent B (Self-Correction)
-        const verifiedLinks = await runAgentBWithSelfCorrection(agentAResult.text, agentAResult.groundingMetadata, apiKey, statusBar);
-
-        // Step 3: Agent C
         statusBar.innerHTML = "🧠 <strong>[Agent C: PB Strategy]</strong> 고객 대응 가이드라인 및 자산운용 전략 생성 중...";
-        const agentCOutput = await runAgentC(keyword, agentAResult.text, customInstruction, apiKey);
+        const agentCOutput = await runAgentC(keyword, agentAResult.text, customInstruction);
 
-        // Step 4: Master Agent (Self-Correction)
-        const masterResult = await runMasterAgentWithSelfCorrection(keyword, period, agentAResult.text, agentCOutput, apiKey, statusBar);
+        const masterResult = await runMasterAgentWithSelfCorrection(keyword, period, agentAResult.text, agentCOutput, statusBar);
 
-        // 마크다운 파싱 및 UI 출력
         let htmlContent = marked.parse(masterResult.text);
 
         if (verifiedLinks.length > 0) {
